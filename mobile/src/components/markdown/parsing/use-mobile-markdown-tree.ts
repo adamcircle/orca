@@ -16,16 +16,19 @@ import {
 } from './mobile-markdown-growing-tree'
 import { protectMobileMarkdownVisualLines } from '../blocks/mobile-markdown-visual-lines'
 import { drawMobileMarkdownSlackMentions } from './mobile-markdown-mentions'
+import { drawSlackMentionTokens } from '../../../../../src/shared/connectors/slack-chat-mentions'
+import type { SlackPeople } from '../../../../../src/shared/connectors/slack-message-markup'
 
 const NO_DIRECTIVES: NativeChatVisualDirective[] = []
 const NO_CARDS: NativeChatDirectiveBotCard[] = []
 
-/** Chat links drawn into the tree: host-confirmed file paths and `#123` refs; and with
- *  `slackMentions`, a Slack message's drawn mentions. */
+/** Chat links drawn into the tree: host-confirmed file paths and `#123` refs; with
+ *  `slackMentions`, a Slack message's drawn mentions; with `slackPeople`, the ones an agent wrote. */
 export type MobileMarkdownTreeLinks = {
   fileLinkExists: FileLinkExists | undefined
   githubRepo: GitHubRepoReference | null | undefined
   slackMentions?: boolean
+  slackPeople?: SlackPeople | null
 }
 
 /** The tree MobileMarkdown draws; with `visuals`, directive lines become placeholders. */
@@ -34,7 +37,7 @@ export function useMobileMarkdownTree(
   visuals: boolean,
   growing: boolean,
   chatMath: boolean,
-  { fileLinkExists, githubRepo, slackMentions = false }: MobileMarkdownTreeLinks
+  { fileLinkExists, githubRepo, slackMentions = false, slackPeople = null }: MobileMarkdownTreeLinks
 ): {
   root: Root
   directives: NativeChatVisualDirective[]
@@ -47,7 +50,11 @@ export function useMobileMarkdownTree(
   const source = visualLines?.text ?? text
   const link = useMemo(
     () => (tree: Root) => {
-      if (slackMentions) {
+      // A Slack message's drawn form has its mentions drawn already; other text may hold an agent's.
+      if (slackPeople && !slackMentions) {
+        drawSlackMentionTokens(tree, slackPeople)
+      }
+      if (slackMentions || slackPeople) {
         drawMobileMarkdownSlackMentions(tree)
       }
       // Same order as desktop: file links first, so a path's `#` never becomes an issue link.
@@ -58,7 +65,7 @@ export function useMobileMarkdownTree(
         linkGitHubReferences(tree, githubRepo)
       }
     },
-    [fileLinkExists, githubRepo, slackMentions]
+    [fileLinkExists, githubRepo, slackMentions, slackPeople]
   )
   // Streaming text grows a little each frame; blocks it finished earlier are not parsed again.
   const cache = useRef<MobileMarkdownTreeCache | null>(null)

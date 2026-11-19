@@ -9,6 +9,7 @@ import type { AgentListVerdict } from '../../shared/agent-status/presentation/ag
 import type { Automation } from '../../shared/automations/automation-definition'
 import type { AutomationRun } from '../../shared/automations/history/automation-run'
 import type { Bot } from '../../shared/bot-types'
+import { chatReplyShown } from '../../shared/connectors/slack-chat-mentions'
 import { botOfHomeWorkspace } from '../../shared/bots/bot-homes'
 import type { BotChatOrigin } from '../../shared/bots/bot-chat-tree'
 import {
@@ -136,7 +137,7 @@ export type BotChatBaseBuild = {
 export function botChatBaseChat(
   ctx: BotChatBaseContext,
   store: AgentSessionRecordReader,
-  bot: Pick<Bot, 'folderWorkspaceId'>,
+  bot: Pick<Bot, 'folderWorkspaceId' | 'members' | 'slack'>,
   record: AgentSessionConversationView,
   build: Pick<BotChatBaseBuild, 'rootOf' | 'homeRoot' | 'originBySessionId'>
 ): BotChatBaseChat | null {
@@ -155,7 +156,7 @@ export function botChatBaseChat(
   const root = store.getRecord(row.id)
   const closed = root ? structuredSessionMailReach(store, root, ctx.db).kind === 'ended' : false
   const origin = row.home ? { origin: 'home' as const } : build.originBySessionId.get(row.id)
-  const preview = row.lastSaid ?? row.lastAsked
+  const preview = (row.lastSaid && chatReplyShown(bot, row.lastSaid)) ?? row.lastAsked
   return {
     chatId: row.id,
     home: row.home,

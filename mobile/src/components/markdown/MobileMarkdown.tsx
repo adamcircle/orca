@@ -86,7 +86,12 @@ function MobileMarkdownContent({
     renderVisual !== undefined,
     growing,
     chatMath,
-    { fileLinkExists, githubRepo: links?.githubRepo, slackMentions }
+    {
+      fileLinkExists,
+      githubRepo: links?.githubRepo,
+      slackMentions,
+      slackPeople: links?.slackPeople ?? null
+    }
   )
   if (!text) {
     return fallback ? (

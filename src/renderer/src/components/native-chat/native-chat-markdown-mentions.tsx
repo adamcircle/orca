@@ -7,7 +7,11 @@ import {
   botMentionTokens
 } from '../../../../shared/bots/bot-mention-context'
 import { BOT_ADDRESS_PREFIX } from '../../../../shared/bot-roster'
-import { SLACK_MENTION_HREF } from '../../../../shared/connectors/slack-message-markup'
+import {
+  SLACK_MENTION_HREF,
+  type SlackPeople
+} from '../../../../shared/connectors/slack-message-markup'
+import { drawSlackMentionTokens } from '../../../../shared/connectors/slack-chat-mentions'
 
 /** Room member names whose `@Name` mentions render as chips in this chat's messages. */
 export const NativeChatMentionNamesContext = createContext<readonly string[] | null>(null)
@@ -38,6 +42,10 @@ export const NativeChatBotChatTitleContext = createContext<
 export function botChatIdLabel(chatId: string): string {
   return `chat ${chatId.slice(0, 6)}`
 }
+
+/** A chat someone asked from Slack: the people it knows, so mentions its agent wrote for Slack show
+ *  as names. Null elsewhere. */
+export const NativeChatSlackPeopleContext = createContext<SlackPeople | null>(null)
 
 /** Whether `@everyone` is a chip too: a group's, never a bot's own chat. */
 export const NativeChatMentionEveryoneContext = createContext(true)
@@ -173,16 +181,28 @@ function BotChatMentionChip({
   )
 }
 
-/** Chips room members' `@Name`s; with `slackMentions`, a Slack message's drawn mentions too. */
+/** Chips room members' `@Name`s; with `slackMentions`, a Slack message's drawn mentions too, and
+ *  with `slackPeople`, the Slack mentions an agent wrote. */
 export function createNativeChatMentionExtension(
   names: readonly string[],
   everyone = true,
-  slackMentions = false
+  slackMentions = false,
+  slackPeople: SlackPeople | null = null
 ): Pick<CommentMarkdownExtension, 'remarkPlugins' | 'sanitizeAttributes' | 'components'> {
   return {
     remarkPlugins: [
-      () => (tree: MarkdownNode, file: { value: unknown }) =>
-        splitMentions(tree, names, everyone, String(file.value), slackMentions)
+      () => (tree: MarkdownNode, file: { value: unknown }) => {
+        if (slackPeople) {
+          drawSlackMentionTokens(tree, slackPeople)
+        }
+        splitMentions(
+          tree,
+          names,
+          everyone,
+          String(file.value),
+          slackMentions || slackPeople !== null
+        )
+      }
     ],
     sanitizeAttributes: { span: [MENTION_PROPERTY, BOT_CHAT_PROPERTY] },
     components: { span: MentionSpan }

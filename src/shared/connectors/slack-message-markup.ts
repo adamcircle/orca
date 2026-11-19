@@ -34,14 +34,17 @@ function prefixed(prefix: string, label: string): string {
   return label.startsWith(prefix) ? label : `${prefix}${label}`
 }
 
-function tokenSegment(raw: string, body: string): SlackMarkupSegment {
+/** Slack people's names by user id, as a chat knows them: a mention with no label shows the name. */
+export type SlackPeople = ReadonlyMap<string, string>
+const NO_PEOPLE: SlackPeople = new Map()
+
+function tokenSegment(raw: string, body: string, people: SlackPeople): SlackMarkupSegment {
   const bar = body.indexOf('|')
   const target = decodeEntities(bar === -1 ? body : body.slice(0, bar))
   const label = bar === -1 ? '' : oneLine(decodeEntities(body.slice(bar + 1)))
   if (target.startsWith('@')) {
-    return label
-      ? { kind: 'mention', text: prefixed('@', label) }
-      : { kind: 'plain', text: '@user' }
+    const name = label || oneLine(people.get(target.slice(1)) ?? '')
+    return name ? { kind: 'mention', text: prefixed('@', name) } : { kind: 'plain', text: '@user' }
   }
   if (target.startsWith('#')) {
     return label
@@ -70,14 +73,17 @@ function tokenSegment(raw: string, body: string): SlackMarkupSegment {
 }
 
 /** A Slack message split at its `<…>` tokens, in order. */
-export function slackMarkupSegments(text: string): SlackMarkupSegment[] {
+export function slackMarkupSegments(
+  text: string,
+  people: SlackPeople = NO_PEOPLE
+): SlackMarkupSegment[] {
   const segments: SlackMarkupSegment[] = []
   let last = 0
   for (const match of text.matchAll(TOKEN)) {
     if (match.index > last) {
       segments.push({ kind: 'text', text: text.slice(last, match.index) })
     }
-    segments.push(tokenSegment(match[0], match[1]!))
+    segments.push(tokenSegment(match[0], match[1]!, people))
     last = match.index + match[0].length
   }
   if (last < text.length) {
@@ -125,4 +131,42 @@ export function slackMarkupShownText(text: string): { text: string; markdown: st
           : escapeMarkdown(segment.text)
   )
   return { text: readable.join(''), markdown: markdown.join('') }
+}
+
+// Only Slack's own mention shapes, which an agent writes so Slack pings someone; any other `<…>`
+// in its text stays as written.
+const MENTION_TOKEN =
+  /<(?:@[UW][A-Z0-9]+|#C[A-Z0-9]+|!(?:here|channel|everyone)|!subteam\^S[A-Z0-9]+)(?:\|[^<>]*)?>/g
+
+export type SlackMentionSegment = Extract<
+  SlackMarkupSegment,
+  { kind: 'text' | 'mention' | 'plain' }
+>
+
+/** Text an agent wrote for Slack, split at its mentions (`<@U…>`, `<#C…|name>`, `<!here>`), each
+ *  as the chat shows it: a known person by name, anyone else as `@user`, never the raw token. */
+export function slackMentionSegments(text: string, people: SlackPeople): SlackMentionSegment[] {
+  const segments: SlackMentionSegment[] = []
+  let last = 0
+  for (const match of text.matchAll(MENTION_TOKEN)) {
+    if (match.index > last) {
+      segments.push({ kind: 'text', text: text.slice(last, match.index) })
+    }
+    const token = tokenSegment(match[0], match[0].slice(1, -1), people)
+    segments.push(token.kind === 'link' ? { kind: 'plain', text: token.text } : token)
+    last = match.index + match[0].length
+  }
+  if (last < text.length) {
+    segments.push({ kind: 'text', text: text.slice(last) })
+  }
+  return segments
+}
+
+/** `slackMentionSegments` as one line of text, for previews. */
+export function slackMentionsShownText(text: string, people: SlackPeople): string {
+  return text.includes('<')
+    ? slackMentionSegments(text, people)
+        .map((segment) => segment.text)
+        .join('')
+    : text
 }

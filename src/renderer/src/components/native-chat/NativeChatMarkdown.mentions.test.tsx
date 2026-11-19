@@ -7,6 +7,7 @@ import {
   NativeChatBotChatTitleContext,
   NativeChatMentionEveryoneContext,
   NativeChatMentionNamesContext,
+  NativeChatSlackPeopleContext,
   withBoundBotMentions
 } from './native-chat-markdown-mentions'
 
@@ -106,5 +107,28 @@ describe("a Slack message's mentions", () => {
     expect(container.textContent).toContain('mail ann@Ann.dev')
     expect(container.querySelector('code')?.textContent).toBe('@Ann (PM) *x*')
     expect(container.querySelector('em')).toBeNull()
+  })
+})
+
+const SLACK_PEOPLE = new Map([['U05BRPQSABY', 'Jinjing']])
+
+describe('Slack mentions an agent wrote', () => {
+  const reply = '<@U05BRPQSABY> the cap is gone; <@U0GONE> <!here> see `<@U05BRPQSABY>`'
+
+  it("shows a chat's Slack people by name and no raw token outside code", () => {
+    const { container } = render(
+      <NativeChatSlackPeopleContext.Provider value={SLACK_PEOPLE}>
+        <NativeChatMarkdown content={reply} variant="document" />
+      </NativeChatSlackPeopleContext.Provider>
+    )
+    expect(chips(container)).toEqual(['@Jinjing', '@here'])
+    expect(container.textContent).toContain('@user')
+    expect(container.querySelector('code')?.textContent).toBe('<@U05BRPQSABY>')
+  })
+
+  it('leaves the text as written in a chat no one asked from Slack', () => {
+    const { container } = render(<NativeChatMarkdown content={reply} variant="document" />)
+    expect(chips(container)).toEqual([])
+    expect(container.textContent).toContain('<@U05BRPQSABY> the cap is gone')
   })
 })

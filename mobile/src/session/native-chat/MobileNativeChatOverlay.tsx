@@ -267,7 +267,8 @@ function MobileNativeChatOverlayContent({
     connState,
     worktreeId: imageSource?.worktreeId ?? '',
     worktreePath,
-    isWorking: controller.nativeChatTurnActive
+    isWorking: controller.nativeChatTurnActive,
+    messages: session.messages
   })
   const continueFailed = sendErrorMessage === null && continuation?.failed === true
   return (

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { slackMarkupSegments, slackMarkupShownText } from './slack-message-markup'
+import {
+  slackMarkupSegments,
+  slackMarkupShownText,
+  slackMentionsShownText
+} from './slack-message-markup'
 
 describe('slackMarkupSegments', () => {
   it('reads every token kind', () => {
@@ -106,5 +110,23 @@ describe('slackMarkupShownText', () => {
 
   it('leaves text with no token alone', () => {
     expect(slackMarkupShownText('typed &lt;@U1|Ann&gt; &amp; *bold*')).toBeNull()
+  })
+})
+
+describe('slackMentionsShownText', () => {
+  const people = new Map([['U05BRPQSABY', 'Jinjing']])
+
+  it('names known people and never shows a raw mention token', () => {
+    expect(
+      slackMentionsShownText(
+        '<@U05BRPQSABY> done, <@U0GONE> <@W0X|Sam> in <#C1|general> <#C2> <!here> <!subteam^S1>',
+        people
+      )
+    ).toBe('@Jinjing done, @user @Sam in #general #channel @here @group')
+  })
+
+  it("leaves anything that isn't a Slack mention as written", () => {
+    const text = 'a <b>bold</b> <https://x.dev|doc> <@alice> <!-- c --> <#include>'
+    expect(slackMentionsShownText(text, people)).toBe(text)
   })
 })

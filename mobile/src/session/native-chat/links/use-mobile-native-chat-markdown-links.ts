@@ -17,6 +17,12 @@ import {
 import { resolveTerminalFileLink } from '../../../../../src/shared/terminal/links/terminal-links'
 import { getRepoIdFromWorktreeId } from '../../../../../src/shared/worktree/id'
 import {
+  slackPeopleFromKey,
+  slackPeopleIn,
+  slackPeopleKey
+} from '../../../../../src/shared/connectors/slack-chat-mentions'
+import type { NativeChatMessage } from '../../../../../src/shared/native-chat/native-chat-types'
+import {
   useRecheckNativeChatFileLinksWhenSettled,
   type MobileMarkdownLinks
 } from '../../../components/markdown/links/mobile-markdown-links-context'
@@ -107,14 +113,15 @@ async function loadGitHubReferenceRepo(
   return repo.success ? githubReferenceRepo(repo.data, githubRepoIdentityKey(slug.result)) : null
 }
 
-/** One per chat: file-path existence and the repo bare `#123` refs point to. */
+/** One per chat: file-path existence, the repo bare `#123` refs point to, and its Slack people. */
 export function useMobileNativeChatMarkdownLinks({
   enabled,
   client,
   connState,
   worktreeId,
   worktreePath,
-  isWorking
+  isWorking,
+  messages
 }: {
   /** The chat is on screen; the `#123` repo is looked up only then. */
   enabled: boolean
@@ -123,6 +130,7 @@ export function useMobileNativeChatMarkdownLinks({
   worktreeId: string
   worktreePath: string | null
   isWorking: boolean
+  messages: readonly NativeChatMessage[]
 }): MobileMarkdownLinks {
   const connected = connState === 'connected'
   const fileLinks = useMemo(
@@ -160,5 +168,10 @@ export function useMobileNativeChatMarkdownLinks({
     }
   }, [client, asksGithub, worktreeId])
 
-  return useMemo(() => ({ fileLinks, githubRepo }), [fileLinks, githubRepo])
+  const slackPeopleRead = slackPeopleKey(slackPeopleIn(messages))
+  const slackPeople = useMemo(() => slackPeopleFromKey(slackPeopleRead), [slackPeopleRead])
+  return useMemo(
+    () => ({ fileLinks, githubRepo, slackPeople }),
+    [fileLinks, githubRepo, slackPeople]
+  )
 }

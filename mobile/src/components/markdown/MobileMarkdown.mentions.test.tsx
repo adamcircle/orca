@@ -33,6 +33,7 @@ vi.mock('expo-clipboard', () => ({ setStringAsync: vi.fn() }))
 
 import { MobileMarkdown } from './MobileMarkdown'
 import { MarkdownLinkHandlerContext } from './links/markdown-link-handler'
+import { MobileMarkdownLinksContext } from './links/mobile-markdown-links-context'
 import { styles } from './mobile-markdown-styles'
 
 function textOf(node: ReactTestInstance | string): string {
@@ -79,5 +80,30 @@ describe("a Slack message's markup on the phone", () => {
     const all = textOf(tree!.root)
     expect(all).toContain('@user in')
     expect(all).toContain('mail ann@Ann.dev')
+  })
+})
+
+describe('Slack mentions an agent wrote, on the phone', () => {
+  it("draws a chat's Slack people by name and no raw token", () => {
+    let tree: ReactTestRenderer | undefined
+    act(() => {
+      tree = create(
+        createElement(
+          MobileMarkdownLinksContext.Provider,
+          {
+            value: {
+              fileLinks: null,
+              githubRepo: null,
+              slackPeople: new Map([['U05BRPQSABY', 'Jinjing']])
+            }
+          },
+          createElement(MobileMarkdown, { content: '<@U05BRPQSABY> the cap is gone; <@U0GONE>' })
+        )
+      )
+    })
+    const spans = tree!.root.findAll((node) => isHostText(node.type))
+    expect(spans.filter((node) => hasStyle(node, styles.mention)).map(textOf)).toEqual(['@Jinjing'])
+    expect(textOf(tree!.root)).not.toContain('<@')
+    expect(textOf(tree!.root)).toContain('@user')
   })
 })
