@@ -278,13 +278,15 @@ function deferredSelectorRule(sourceCode, inspect) {
     'Program:exit'() {
       for (const node of state.deferredCalls) {
         const { selector: argument, shallow } = unwrapShallowSelector(node.arguments[0], state)
-        const report = inspect({
+        const reports = inspect({
           selector: resolveSelector(argument, state),
           shallow,
           state
         })
-        if (report) {
-          this.report(report)
+        for (const report of [reports].flat()) {
+          if (report) {
+            this.report(report)
+          }
         }
       }
     }
@@ -321,8 +323,30 @@ function noFreshSelectorResultRule(sourceCode) {
   })
 }
 
-// Host observations replace this map on every meaningful change (runtime-status.ts).
-const HOT_STORE_FIELDS = new Set(['runtimeStatusByEnvironmentId'])
+// Fleet-keyed maps that get a new reference whenever any one host, pane, tab or worktree changes,
+// so a whole-map selector re-renders its owner for every other entry's update.
+const HOT_STORE_FIELDS = new Set([
+  'runtimeStatusByEnvironmentId',
+  'agentStatusByPaneKey',
+  'acknowledgedAgentsByPaneKey',
+  'paneForegroundAgentByPaneKey',
+  'runtimeAgentOrchestrationByPaneKey',
+  'runtimePaneTitlesByTabId',
+  'ptyIdsByTabId',
+  'gitStatusByWorktree',
+  'tabsByWorktree',
+  'unifiedTabsByWorktree',
+  'groupsByWorktree',
+  'layoutByWorktree',
+  'activeTabIdByWorktree',
+  'activeGroupIdByWorktree',
+  'browserTabsByWorktree',
+  'browserPagesByWorkspace',
+  'terminalLayoutsByTabId',
+  'lastTerminalInputAtByPaneKey',
+  'lastVisitedAtByWorktreeId',
+  'agentSenderPublicationsByHost'
+])
 
 function selectorLocalConstant(variable, selector) {
   const definition = variable?.defs[0]
@@ -375,21 +399,52 @@ function selectorValue(expression, selector, state, seen = new Set()) {
     : null
 }
 
+/** Expressions whose value reaches the subscriber unchanged: fallbacks, branches, selector-local
+ *  const aliases, and one level under useShallow. */
+function wholeValueCandidates(expression, shallow, localInit, seen = new Set()) {
+  const expand = (node, nested = shallow) => wholeValueCandidates(node, nested, localInit, seen)
+  if (expression?.type === 'LogicalExpression') {
+    // A truthy map on the left of `&&` never reaches the subscriber.
+    const sides =
+      expression.operator === '&&' ? [expression.right] : [expression.left, expression.right]
+    return sides.flatMap((side) => expand(side))
+  }
+  if (expression?.type === 'ConditionalExpression') {
+    return [expression.consequent, expression.alternate].flatMap((branch) => expand(branch))
+  }
+  const init =
+    expression?.type === 'Identifier' && !seen.has(expression) ? localInit(expression) : null
+  if (init) {
+    seen.add(expression)
+    return [expression, ...expand(init)]
+  }
+  return shallow
+    ? [expression, ...nestedFreshValues(expression).flatMap((value) => expand(value, false))]
+    : [expression]
+}
+
 function noWholeHotMapSelectorRule(sourceCode) {
-  return deferredSelectorRule(sourceCode, ({ selector, state }) => {
+  return deferredSelectorRule(sourceCode, ({ selector, shallow, state }) => {
     if (!selector) {
       return null
     }
-    const result = returnedExpressions(selector).find((expression) =>
-      HOT_STORE_FIELDS.has(selectorValue(expression, selector, state))
-    )
-    return result
-      ? {
-          node: result,
-          message:
-            'This whole host-status map changes for every host. Select the derived answer for your own host/item with a stable result (see paired-runtime-parking-capabilities.ts), or add a disable comment with a reason if this consumer needs every host.'
-        }
-      : null
+    const localInit = (identifier) => {
+      const declaration = selectorLocalConstant(variableFor(identifier, state), selector)
+      return declaration?.id.type === 'Identifier' ? declaration.init : null
+    }
+    const reports = new Map()
+    for (const expression of returnedExpressions(selector).flatMap((returned) =>
+      wholeValueCandidates(returned, shallow, localInit)
+    )) {
+      const field = selectorValue(expression, selector, state)
+      if (HOT_STORE_FIELDS.has(field) && !reports.has(field)) {
+        reports.set(field, {
+          node: expression,
+          message: `The whole ${field} map changes whenever any entry does. Select the derived answer for your own host/item with a stable result (see paired-runtime-parking-capabilities.ts), or add a disable comment with a reason if this consumer needs every entry.`
+        })
+      }
+    }
+    return [...reports.values()]
   })
 }
 
